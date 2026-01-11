@@ -11,7 +11,6 @@ from openai import OpenAI
 # Internal Imports
 from src.db.session import sync_engine
 from src.models.chat import Conversation, ChatMessage
-# --- FIX 1: Import the new update function ---
 from src.mcp.tools import (
     add_task, 
     list_tasks, 
@@ -20,7 +19,7 @@ from src.mcp.tools import (
     delete_all_tasks, 
     complete_all_tasks, 
     mark_all_tasks_incomplete,
-    update_task_by_title  # <--- Added this
+    update_task_by_title
 )
 
 router = APIRouter()
@@ -50,7 +49,7 @@ BEHAVIORAL GUIDELINES:
 1. **Direct & Action-Oriented**: Do not explain what you are doing, just do it.
 2. **Smart Parsing**: If the user provides a relative date like "next friday", calculate the specific date.
 3. **Data Integrity**: Always ensure dates are formatted as YYYY-MM-DD before saving.
-4. **Priority**: Default to "medium" if not specified.
+4. **Duplicate Handling**: If you find multiple tasks with the same name when deleting, ask the user for clarification using the task IDs provided in the error message.
 """
 
 # --- TOOLS SCHEMA ---
@@ -73,7 +72,6 @@ TOOLS_SCHEMA = [
             }
         }
     },
-    # --- FIX 2: Added update_task definition ---
     {
         "type": "function",
         "function": {
@@ -107,17 +105,18 @@ TOOLS_SCHEMA = [
             }
         }
     },
+    # --- FIX: Updated delete_task Schema ---
     {
         "type": "function",
         "function": {
             "name": "delete_task",
-            "description": "Delete a task by title",
+            "description": "Delete a task. Handles duplicates: if multiple tasks have the same title, use task_id.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "task_title": {"type": "string", "description": "Title of the task to delete"}
-                },
-                "required": ["task_title", "user_id"]
+                    "task_title": {"type": "string", "description": "Title of the task to delete (if unique)"},
+                    "task_id": {"type": "string", "description": "The specific UUID of the task (use this to resolve duplicates)"}
+                }
             }
         }
     },
@@ -261,7 +260,7 @@ async def chat_endpoint(request: ChatRequest):
                     # Call the appropriate tool
                     if fname == "add_task":
                         result = add_task(**args)
-                    elif fname == "update_task": # --- FIX 3: Handle update tool call ---
+                    elif fname == "update_task":
                         result = update_task_by_title(**args)
                     elif fname == "list_tasks":
                         result = list_tasks(**args)
@@ -316,7 +315,7 @@ async def chat_endpoint(request: ChatRequest):
             original_request={"message": request.message}
         )
 
-# --- CONVERSATION HISTORY ENDPOINTS (No changes needed below) ---
+# --- CONVERSATION HISTORY ENDPOINTS ---
 class ConversationHistoryResponse(BaseModel):
     id: str
     title: str
